@@ -107,7 +107,7 @@ class RestartWrite(Model):
     efn: Optional[int] = Field(default=None,ge=0,le=255,strict=True)
     force_after_stop: bool = False
     force_after_timeout: bool = False
-    wait_timeout_sec: float = Field(default=30,ge=1,le=3600)
+    wait_timeout_sec: float = Field(default=30,ge=1,le=7200)
 
     @model_validator(mode="after")
     def unique(self):
