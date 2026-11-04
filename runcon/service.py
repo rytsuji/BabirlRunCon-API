@@ -124,26 +124,35 @@ class RunService:
     def start(self, save):
         with self.lock:
             self.require_writes()
-            _, status = self.state()
-            if status != 'IDLE':
-                raise ApiError(409, 'run_not_idle', 'Start requires IDLE', runstatus=status)
-            self.last_stop_attempt=None
-            self.last_action_attempt=time.monotonic()
-            self.invoke('start' if save else 'nssta', mutation=True)
+            self.active_action='start' if save else 'nssta'
             try:
-                result, observed = self.state()
-            except ApiError as exc:
-                exc.code = 'operation_result_unknown'; exc.details['outcome'] = 'unknown'
-                raise
-            expected = 'START' if save else 'NSSTA'
-            if observed != expected:
-                raise ApiError(502, 'verification_failed', 'Start state not observed',
-                               expected=expected, observed=observed, outcome='unknown',
-                               retry_automatically=False)
-            return self.envelope({'operation':'start','verified':True,'runinfo':result['runinfo']})
+                _, status = self.state()
+                if status != 'IDLE':
+                    raise ApiError(409, 'run_not_idle', 'Start requires IDLE', runstatus=status)
+                self.last_stop_attempt=None
+                self.last_action_attempt=time.monotonic()
+                self.invoke('start' if save else 'nssta', mutation=True)
+                try:
+                    result, observed = self.state()
+                except ApiError as exc:
+                    exc.code = 'operation_result_unknown'; exc.details['outcome'] = 'unknown'
+                    raise
+                expected = 'START' if save else 'NSSTA'
+                if observed != expected:
+                    raise ApiError(502, 'verification_failed', 'Start state not observed',
+                                   expected=expected, observed=observed, outcome='unknown',
+                                   retry_automatically=False)
+                return self.envelope({'operation':'start','verified':True,'runinfo':result['runinfo']})
+            finally:
+                self.active_action=None
 
     def stop(self, ender):
-        with self.lock:
+        self.require_writes()
+        # Stop must reach EB even when native Start is still waiting for ES.
+        while not self.lock.acquire(timeout=.1):
+            if getattr(self,'active_action',None) in ('start','nssta') and hasattr(self.client,'cancel_wait'):
+                self.client.cancel_wait()
+        try:
             self.require_writes()
             self.last_stop_attempt=time.monotonic()
             self.last_action_attempt=self.last_stop_attempt
@@ -155,3 +164,5 @@ class RunService:
                                observed=observed, outcome='unknown', retry_automatically=False)
             self.stop_verified=True
             return self.envelope({'operation':'stop','verified':True,'runinfo':result['runinfo']})
+        finally:
+            self.lock.release()

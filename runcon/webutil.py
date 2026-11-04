@@ -287,14 +287,15 @@ class Webutil:
     def restart(self,body):
         # Only fixed process names; never accept arbitrary shell commands/arguments.
         selected=set(body.processes)
-        if 'babild' in selected:selected.add('babinfo')
+        if body.force_after_timeout or body.force_after_stop:selected.update(('babinfo','babild'))
+        if selected.intersection(('babinfo','babild')):selected.update(('babinfo','babild'))
         order=[name for name in ('babinfo','babild','babissm','babian') if name in selected]
         if body.force_after_timeout:
             self.service.require_writes()
-            attempted=getattr(self.service,'last_action_attempt',None)
-            # GUI timing includes delivery/header setup just before native Start.
+            attempted=getattr(self.service,'last_stop_attempt',None)
+            # GUI delay starts at the Stop click, shortly before API delivery.
             if attempted is None or time.monotonic()-attempted<max(0,body.wait_timeout_sec-1):
-                raise ApiError(409,'timeout_required','No expired Start/Stop wait is available')
+                raise ApiError(409,'timeout_required','No unconfirmed Stop attempt has reached the Restart enable delay')
             if hasattr(self.service.client,'cancel_wait'):self.service.client.cancel_wait()
         with self.service.lock:
             self.service.require_writes()
