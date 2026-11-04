@@ -391,18 +391,11 @@ static int checked_es_config(char *arg){
   return 1;
 }
 static int checked_es_connect(char *arg){
-  int fd, command = ES_DIS_EFR, len = sizeof(command), id = atoi(arg);
+  int fd, command = ES_CON_EFR, len = sizeof(command), id = atoi(arg);
   if(runinfo.runstat != STAT_RUN_IDLE)
     babi_abort("ES connect requires verified IDLE; request was not sent");
   if(daqinfo.eflist[id].of < EB_EFLIST_ON || daqinfo.eflist[id].of > EB_EFLIST_PAS)
     babi_abort("ES is disabled; connect request was not sent");
-  fd = es_socket(arg);
-  transfer(fd, &len, sizeof(len), 1);
-  transfer(fd, &command, sizeof(command), 1);
-  close(fd); live_socket = -1;
-  /* ES can retain connect=1 after EB restarts. ES_CON_EFR alone is then a
-   * no-op and leaves the data/end-of-run stream on the obsolete socket. */
-  command = ES_CON_EFR;
   fd = es_socket(arg);
   transfer(fd, &len, sizeof(len), 1);
   transfer(fd, &command, sizeof(command), 1);
