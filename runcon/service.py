@@ -32,6 +32,8 @@ class RunService:
         except BabirlError as exc:
             # Failed/absent mutation replies cannot prove that no action occurred.
             code = 'operation_result_unknown' if mutation else 'daq_unavailable'
+            if str(exc)=='native transport failure: command deadline exceeded':
+                code='operation_timeout'
             raise ApiError(502, code, str(exc), outcome='unknown' if mutation else 'unavailable',
                            retry_automatically=False) from exc
 
