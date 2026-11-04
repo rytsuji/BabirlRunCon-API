@@ -1,0 +1,14 @@
+{
+  "api": {
+    "bind_host": "127.0.0.1",
+    "port": 5000,
+    "cors_origins": [],
+    "token_env": "BABIRL_API_TOKEN"
+  },
+  "daq": {
+    "name": "Babild",
+    "babild": {"host": "127.0.0.1", "port": 17511},
+    "es_port_base": 17651,
+    "allow_writes": true
+  }
+}

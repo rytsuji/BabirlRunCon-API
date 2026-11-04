@@ -1,0 +1,78 @@
+"babirl software package"
+
+Produced by Hidetada Baba @ RIKEN.
+
+
+
+babian :
+ On-line analysis front-end (for ANAPAW, chkridf, ...)
+
+babicon :
+ DAQ controller
+
+babidrv :
+ Linux Device driver for CAMAC/VME readout (requires NBBQ)
+
+babidrvccnet : 
+ Linux Device driver for TOYO CC/NET readout (requires NBBQ)
+
+babies : 
+ Event sender for CAMAC/VME Front-end computer 
+
+babild : 
+ Event builder
+
+babimo : 
+ babirl process monitor/manager
+
+babimocli : 
+ -> webutil
+
+babinfo :
+ Information manager
+
+babirtdrv :
+ RTLinux Device driver for CAMAC/VME readout (requires NBBQ)
+
+babiscr :
+ Scaler process (with babies)
+
+babissm :
+ Start and Stop manager
+
+bin :
+ Links to binaries
+
+ccnet_daq :
+ Old files
+
+devtool :
+ Development tool
+
+include :
+ Include files
+
+init : 
+ Initialize files
+
+lib : 
+ Libraries
+
+log :
+ Log files
+
+modules : 
+ Include files for device drivers
+
+rcd :
+ Startup files for /etc/ini.d/
+
+ridfutil :
+ RIDF utilities
+
+scr :
+ Scaler definition
+
+webutil :
+ Web utilities (PHP)
+
