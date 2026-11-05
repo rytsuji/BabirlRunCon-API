@@ -209,6 +209,8 @@ class Webutil:
         return value,result
 
     def write(self,kind,body,efn=None):
+        if getattr(self.service,'active_action',None) in ('start','nssta','stop'):
+            raise ApiError(409,'operation_in_progress','Settings are locked during Start/Stop')
         with self.service.lock:
             before=self.require_idle()
             self.abi()
@@ -321,22 +323,26 @@ class Webutil:
                 raise ApiError(409,'missing_eb_efn','Set the EB fragment number in Edit configuration for offline recovery')
             self.service.last_stop_attempt=None
             steps=[]
-            try:
-                stop_order=list(reversed(order))
-                if 'babinfo' in selected and 'babild' not in stop_order:stop_order.insert(0,'babild')
-                for name in stop_order:
+            stop_order=list(reversed(order))
+            for name in stop_order:
+                try:
                     if self.process_pid(name)>0:
                         rpc(self.settings.daq.babild.host,self.settings.daq.babimo_port,13,name.encode(),reply=False)
                     self.wait_pid(name,False)
                     steps.append({'process':name,'action':'stop','verified':True})
-                for name in order:
+                except (OSError,ApiError) as exc:
+                    steps.append({'process':name,'action':'stop','verified':False,'error':str(exc)})
+            for name in order:
+                try:
                     launch=f'babild -l {efn}' if name=='babild' else name
                     rpc(self.settings.daq.babild.host,self.settings.daq.babimo_port,16,launch.encode(),reply=False)
                     pid=self.wait_pid(name,True)
                     steps.append({'process':name,'action':'start','pid':pid,'verified':True})
-                return self.service.envelope({'verified':True,'steps':steps,'readiness':'PID verified; device initialization may still be in progress'})
-            except OSError as exc:
-                raise ApiError(502,'restart_result_unknown',str(exc),outcome='unknown',steps=steps,retry_automatically=False) from exc
+                except (OSError,ApiError) as exc:
+                    steps.append({'process':name,'action':'start','verified':False,'error':str(exc)})
+            if any(step['action']=='start' and not step['verified'] for step in steps):
+                raise ApiError(502,'restart_result_unknown','One or more processes could not be started',outcome='unknown',steps=steps,retry_automatically=False)
+            return self.service.envelope({'verified':True,'steps':steps,'readiness':'PID verified; device initialization may still be in progress'})
 
     def processes(self):
         items=[]
@@ -468,9 +474,8 @@ def attach_webutil(app,service):
 
     @app.get('/api/v1/webutil/es/{efn}')
     def read_es(efn:int):
-        with service.lock:
-            try:return service.envelope(util.read_es(efn)[1])
-            except OSError as exc:raise ApiError(502,'es_unavailable',str(exc)) from exc
+        try:return service.envelope(util.read_es(efn,service.get_config()['data'])[1])
+        except OSError as exc:raise ApiError(502,'es_unavailable',str(exc)) from exc
 
     @app.put('/api/v1/webutil/es/{efn}')
     def es(efn:int,body:ESWrite):return util.write('es',body,efn)

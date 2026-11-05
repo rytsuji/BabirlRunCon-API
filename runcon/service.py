@@ -2,7 +2,11 @@
 from datetime import datetime, timezone
 from threading import Lock
 import time
-from .babicmd import BabirlError
+import json
+import subprocess
+import sys
+from pathlib import Path
+from .babicmd import BabirlError,Client
 
 class ApiError(Exception):
     def __init__(self, status, code, message, **details):
@@ -53,10 +57,26 @@ class RunService:
             return self.envelope(config['runinfo'])
 
     def get_config(self):
-        with self.lock:
-            config, _ = self.state()
-            # Includes EF/SSM/HD information from the original JSON renderer.
-            return self.envelope(config)
+        # A long native Stop holds both the service and C locks. Read in a
+        # separate process so viewing configuration never waits for that Stop.
+        if isinstance(self.client,Client):
+            d=self.settings.daq
+            options={'host':d.babild.host,'port':d.babild.port,'es_port_base':d.es_port_base,
+                     'library':self.client._lib._name,'command_timeout_sec':min(5,d.command_timeout_sec)}
+            try:
+                result=subprocess.run([sys.executable,'-m','runcon.readonly'],
+                    input=json.dumps(options),text=True,capture_output=True,timeout=7,
+                    cwd=str(Path(__file__).resolve().parents[1]),check=True)
+                data=json.loads(result.stdout)
+                if data.get('error'):raise ValueError(data['error'])
+                config=data['data']
+            except (OSError,subprocess.SubprocessError,ValueError,KeyError) as exc:
+                raise ApiError(502,'daq_unavailable',str(exc),outcome='unavailable') from exc
+        else:
+            config=self.invoke('getconfig')
+        efn=config.get('ebinfo',{}).get('efn')
+        if isinstance(efn,int) and not isinstance(efn,bool) and 0<=efn<256:self.last_efn=efn
+        return self.envelope(config)
 
     def events(self, es=False):
         with self.lock:
@@ -156,6 +176,7 @@ class RunService:
                 self.client.cancel_wait()
         try:
             self.require_writes()
+            self.active_action='stop'
             self.last_stop_attempt=time.monotonic()
             self.last_action_attempt=self.last_stop_attempt
             self.stop_verified=False
@@ -167,4 +188,5 @@ class RunService:
             self.stop_verified=True
             return self.envelope({'operation':'stop','verified':True,'runinfo':result['runinfo']})
         finally:
+            self.active_action=None
             self.lock.release()
