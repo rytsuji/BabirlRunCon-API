@@ -169,7 +169,7 @@ __attribute__((visibility("default"))) int babi_call_target_timed(const char *ho
 
 /* Stop must be sent before any state/config read, including during partial failure. */
 static int checked_stop(char *arg){
-  int fd, ret;
+  int fd, ret, ender_attempted = 0, ender_ack = 0, status_after_stop;
   char ender[80] = {0};
   /* Preserve the entire UTF-8 argument, including spaces, before any RPC. */
   strncpy(ender, *arg ? arg : "no ender", sizeof(ender)-1);
@@ -186,9 +186,12 @@ static int checked_stop(char *arg){
     check_deadline();
     usleep(10000);
   }while(1);
+  status_after_stop = runinfo.runstat;
   if(runinfo.runstat == STAT_RUN_WAITSTOP){
     fd = ebcon(ebhostname);
+    ender_attempted = 1;
     ret = eb_set(fd, EB_SET_ENDER, ender, sizeof(ender));
+    ender_ack = ret;
     close(fd);
     /* Ender is a comment: a rejected write must not prevent Run close. */
     fd = ebcon(ebhostname);
@@ -199,6 +202,14 @@ static int checked_stop(char *arg){
   get_runinfo();
   /* runname belongs to getconfig, which was deliberately not read on this path. */
   if(*stop_diagnostic) babi_abort(stop_diagnostic);
+  /* Delivery diagnostics only: never turn a comment mismatch into Stop failure. */
+  bbjson_begin_obj("ender_delivery");
+  bbjson_charobj("native_build", "ender-stop-20261109-25");
+  bbjson_charobj("value", ender);
+  bbjson_intobj("attempted", ender_attempted);
+  bbjson_intobj("acknowledged", ender_ack);
+  bbjson_intobj("runstatus_before_write", status_after_stop);
+  bbjson_end_obj();
   bbjson_begin_obj("runinfo");
   bbjson_intobj("runnumber", runinfo.runnumber);
   bbjson_charobj("runstatus", runinfo.runstat == STAT_RUN_IDLE ? "IDLE" : "UNKNOWN");

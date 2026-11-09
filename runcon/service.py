@@ -186,7 +186,8 @@ class RunService:
                 raise ApiError(502, 'verification_failed', 'Stop state not observed',
                                observed=observed, outcome='unknown', retry_automatically=False)
             self.stop_verified=True
-            return self.envelope({'operation':'stop','verified':True,'runinfo':result['runinfo']})
+            return self.envelope({'operation':'stop','verified':True,'runinfo':result['runinfo'],
+                                  'requested_ender':ender,'ender_delivery':result.get('ender_delivery')})
         finally:
             self.active_action=None
             self.lock.release()
