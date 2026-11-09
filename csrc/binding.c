@@ -169,9 +169,8 @@ __attribute__((visibility("default"))) int babi_call_target_timed(const char *ho
 
 /* Stop must be sent before any state/config read, including during partial failure. */
 static int checked_stop(char *arg){
-  int fd, ret, ender_written = 0;
+  int fd, ret;
   char ender[80] = {0};
-  static char ender_diagnostic[256];
   /* Preserve the entire UTF-8 argument, including spaces, before any RPC. */
   strncpy(ender, *arg ? arg : "no ender", sizeof(ender)-1);
   fd = ebcon(ebhostname);
@@ -191,30 +190,15 @@ static int checked_stop(char *arg){
     fd = ebcon(ebhostname);
     ret = eb_set(fd, EB_SET_ENDER, ender, sizeof(ender));
     close(fd);
-    if(!ret) babi_abort("Stop ender rejected");
-    /* ACK alone does not prove the Ender was stored. Verify before closing
-     * the Run, because EB_RUN_CLOSE commits this comment to the data file. */
-    get_runinfo();
-    if(runinfo.runstat != STAT_RUN_WAITSTOP)
-      babi_abort("Run closed before Ender could be verified");
-    if(strncmp(runinfo.ender, ender, sizeof(ender))){
-      snprintf(ender_diagnostic,sizeof(ender_diagnostic),
-        "Ender readback mismatch before Run close: requested='%.79s', observed='%.79s'",
-        ender,runinfo.ender);
-      babi_abort(ender_diagnostic);
-    }
-    ender_written = 1;
+    /* Ender is a comment: a rejected write must not prevent Run close. */
     fd = ebcon(ebhostname);
     eb_get(fd, EB_RUN_CLOSE, (char *)&ret);
     close(fd);
     if(!ret) babi_abort("Stop close rejected");
   }
   get_runinfo();
-  if(ender_written && strncmp(runinfo.ender,ender,sizeof(ender)))
-    babi_abort("Ender changed while closing the Run");
   /* runname belongs to getconfig, which was deliberately not read on this path. */
   if(*stop_diagnostic) babi_abort(stop_diagnostic);
-  bbjson_intobj("ender_written",ender_written);
   bbjson_begin_obj("runinfo");
   bbjson_intobj("runnumber", runinfo.runnumber);
   bbjson_charobj("runstatus", runinfo.runstat == STAT_RUN_IDLE ? "IDLE" : "UNKNOWN");

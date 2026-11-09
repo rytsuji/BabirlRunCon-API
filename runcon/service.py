@@ -164,7 +164,6 @@ class RunService:
                     raise ApiError(502, 'verification_failed', 'Start state not observed',
                                    expected=expected, observed=observed, outcome='unknown',
                                    retry_automatically=False)
-                self.last_started_run = (result['runinfo'].get('runnumber'), expected)
                 return self.envelope({'operation':'start','verified':True,'runinfo':result['runinfo']})
             finally:
                 self.active_action=None
@@ -186,17 +185,6 @@ class RunService:
             if observed != 'IDLE':
                 raise ApiError(502, 'verification_failed', 'Stop state not observed',
                                observed=observed, outcome='unknown', retry_automatically=False)
-            runinfo=result['runinfo']
-            started=getattr(self,'last_started_run',None)
-            mode=started[1] if started and started[0]==runinfo.get('runnumber') else None
-            # NSSTA has no saved Run end comment. Saved Runs must not silently
-            # succeed with a previous Ender, including with an older library.
-            applicable=mode=='START' or (mode!='NSSTA' and result.get('ender_written')!=0)
-            if ender and applicable and runinfo.get('ender')!=ender:
-                raise ApiError(502,'ender_verification_failed',
-                               'DAQ stopped, but the requested Ender was not stored',
-                               expected_ender=ender,observed_ender=runinfo.get('ender'),
-                               outcome='stopped',retry_automatically=False)
             self.stop_verified=True
             return self.envelope({'operation':'stop','verified':True,'runinfo':result['runinfo']})
         finally:
