@@ -27,7 +27,6 @@ static void emit_start_error(const char *detail){
 }
 static int checked_es_connect(char *arg);
 static int checked_stop(char *arg);
-static void transfer(int fd, void *data, size_t size, int writing);
 static int command_deadline_seconds = 30;
 static int cancel_wait = 0;
 static int long_operation = 0;
@@ -168,56 +167,18 @@ __attribute__((visibility("default"))) int babi_call_target_timed(const char *ho
   return result;
 }
 
-/* babild's XML Stop receives the comment before stopping the ES and writes it
- * in xstop() before closing the saved Run. Do not send another Stop on failure. */
-static void stop_with_ender_xml(const char *ender){
-  char request[512], response[4096];
-  BBXMLEL *dom, *root, *error;
-  int fd, len;
-  len = snprintf(request,sizeof(request),
-    "<?xml version=\"1.0\" encoding=\"UTF-8\"?><babildxcom><stop><![CDATA[%s]]></stop></babildxcom>",
-    ender);
-  if(len < 0 || len >= sizeof(request)) babi_abort("XML Stop request too large");
-  fd = ebcon(ebhostname);
-  transfer(fd,&len,sizeof(len),1);
-  transfer(fd,request,len,1);
-  transfer(fd,&len,sizeof(len),0);
-  if(len < 1 || len >= sizeof(response)) babi_abort("Invalid XML Stop reply size");
-  transfer(fd,response,len,0);
-  close(fd);
-  response[len]=0;
-  dom=bbxml_parsebuff(response,len);
-  root=bbxml_node(dom,"babild");
-  if(!root){ bbxml_free(dom); babi_abort("Invalid XML Stop response"); }
-  error=bbxml_node(root,"error");
-  if(error) strncpy(stop_diagnostic,error->text,sizeof(stop_diagnostic)-1);
-  bbxml_free(dom);
-}
-
 /* Stop must be sent before any state/config read, including during partial failure. */
 static int checked_stop(char *arg){
-  int fd, ret, ender_attempted = 0, ender_ack = 0, status_after_stop, xml_stop, i;
+  int fd, ret, ender_attempted = 0, ender_ack = 0, status_after_stop;
   char ender[80] = {0};
   /* Preserve the entire UTF-8 argument, including spaces, before any RPC. */
   strncpy(ender, *arg ? arg : "no ender", sizeof(ender)-1);
-  /* The upstream XML parser drops leading-space and multiline text and cannot
-   * concatenate split CDATA. Keep the binary path for those comments so their
-   * bytes are preserved. Ordinary one-line Enders travel with the Stop itself. */
-  xml_stop = ender[0]!=' ' && !strstr(ender,"]]>") &&
-    !strstr(ender,"\xef\xbf\xbe") && !strstr(ender,"\xef\xbf\xbf");
-  for(i=0;ender[i];i++) if((unsigned char)ender[i]<0x20) xml_stop=0;
-  if(xml_stop){
-    stop_with_ender_xml(ender);
-    ender_attempted=1;
-    ender_ack=-1; /* XML has no separate Ender acknowledgement. */
-  }else{
-    fd = ebcon(ebhostname);
-    eb_get(fd, EB_RUN_STOP, (char *)&ret);
-    close(fd);
-    /* Repeated Stop while already IDLE is benign; retain other diagnostics. */
-    if(!ret && !strcmp(stop_diagnostic+strspn(stop_diagnostic," "),"runstatus=IDLE"))
-      stop_diagnostic[0]=0;
-  }
+  fd = ebcon(ebhostname);
+  eb_get(fd, EB_RUN_STOP, (char *)&ret);
+  close(fd);
+  /* Repeated Stop while already IDLE is benign; retain all other diagnostics. */
+  if(!ret && !strcmp(stop_diagnostic+strspn(stop_diagnostic," "),"runstatus=IDLE"))
+    stop_diagnostic[0]=0;
   /* A repeated Stop can return zero while the EB is already waiting for close. */
   do{
     get_runinfo();
@@ -226,10 +187,6 @@ static int checked_stop(char *arg){
     usleep(10000);
   }while(1);
   status_after_stop = runinfo.runstat;
-  if(xml_stop && status_after_stop==STAT_RUN_IDLE &&
-      strstr(stop_diagnostic,"not starting or babildes mode")) stop_diagnostic[0]=0;
-  /* xstop() waits up to 20 seconds inside babild. If it returns with a longer
-   * acquisition still stopping, finish WAITSTOP here without resending Stop. */
   if(runinfo.runstat == STAT_RUN_WAITSTOP){
     fd = ebcon(ebhostname);
     ender_attempted = 1;
@@ -247,13 +204,12 @@ static int checked_stop(char *arg){
   if(*stop_diagnostic) babi_abort(stop_diagnostic);
   /* Delivery diagnostics only: never turn a comment mismatch into Stop failure. */
   bbjson_begin_obj("ender_delivery");
-  bbjson_charobj("native_build", "ender-stop-20261109-26");
+  bbjson_charobj("native_build", "ender-stop-20261109-27");
   bbjson_charobj("value", ender);
-  bbjson_charobj("transport",xml_stop ? "xml_stop" : "binary_stop");
-  bbjson_intobj("submitted_with_stop",xml_stop);
+  bbjson_charobj("transport", "binary_stop");
   bbjson_intobj("attempted", ender_attempted);
   bbjson_intobj("acknowledged", ender_ack);
-  bbjson_intobj("runstatus_after_stop", status_after_stop);
+  bbjson_intobj("runstatus_before_write", status_after_stop);
   bbjson_end_obj();
   bbjson_begin_obj("runinfo");
   bbjson_intobj("runnumber", runinfo.runnumber);
