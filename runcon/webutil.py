@@ -332,7 +332,9 @@ class Webutil:
                     steps.append({'process':name,'action':'stop','verified':True})
                 except (OSError,ApiError) as exc:
                     steps.append({'process':name,'action':'stop','verified':False,'error':str(exc)})
-            for name in order:
+            for index,name in enumerate(order):
+                if index:
+                    time.sleep(.5)
                 try:
                     launch=f'babild -l {efn}' if name=='babild' else name
                     rpc(self.settings.daq.babild.host,self.settings.daq.babimo_port,16,launch.encode(),reply=False)
